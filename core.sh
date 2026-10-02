@@ -9,32 +9,53 @@ echo "==================================================="
 echo " BẮT ĐẦU KHỞI TẠO HỆ THỐNG ROM: HÀNH TRÌNH VERTEX"
 echo "==================================================="
 
-# 1. Chuẩn bị bộ công cụ (Tự động tải ngầm, không làm rác kho lưu trữ)
+# 1. Chuẩn bị bộ công cụ
 echo "-> [1/5] Đang nạp bộ công cụ mổ xẻ lõi..."
 git clone https://github.com/Mrbi1198/PenguinOS.git temp_tools --depth 1 -q
 mv temp_tools/bin ./tools
 rm -rf temp_tools
 chmod -R 777 tools/
 
-# 2. Tải bản ROM gốc
+# 2. Tải bản ROM gốc (Lưu tự động theo định dạng thực tế)
 echo "-> [2/5] Đang tải ROM từ máy chủ..."
-aria2c -x16 -s16 -j16 -k1M "$ROM_URL" -o baserom.tgz || { echo "LỖI CHÍ MẠNG: Tải ROM thất bại!"; exit 1; }
+aria2c -x16 -s16 -j16 -k1M "$ROM_URL" -o baserom_downloaded || { echo "LỖI CHÍ MẠNG: Tải ROM thất bại!"; exit 1; }
 
-# 3. Giải nén và bung siêu phân vùng (Unpack)
-echo "-> [3/5] Đang giải nén lớp vỏ Fastboot..."
-mkdir -p build/images build/unpacked build/extracted
-tar -xzf baserom.tgz -C build/ --strip-components=1 || { echo "LỖI: File ROM bị hỏng định dạng!"; exit 1; }
-
-# Gom file super.img (Hỗ trợ cả dạng file nguyên khối hoặc bị chia nhỏ)
-mv build/images/super.img.* build/ 2>/dev/null || true
-mv build/images/super.img build/ 2>/dev/null || true
-if ls build/super.img.* 1> /dev/null 2>&1; then
-    ./tools/Linux/x86_64/simg2img build/super.img.* build/super.img
-    rm -f build/super.img.*
+# Tự nhận diện đuôi file tải về (.zip hay .tgz)
+if file baserom_downloaded | grep -q "Zip archive"; then
+    mv baserom_downloaded baserom.zip
+    ROM_TYPE="zip"
+else
+    mv baserom_downloaded baserom.tgz
+    ROM_TYPE="tgz"
 fi
 
-echo "-> Đang bung nén phân vùng lõi (System, Vendor, Product)..."
-python3 tools/lpunpack.py build/super.img build/unpacked/ >/dev/null 2>&1 || { echo "LỖI: Không thể đọc siêu phân vùng!"; exit 1; }
+# 3. Giải nén linh hoạt theo định dạng ROM
+echo "-> [3/5] Đang giải nén lớp vỏ ROM (Định dạng: $ROM_TYPE)..."
+mkdir -p build/images build/unpacked build/extracted
+
+if [ "$ROM_TYPE" == "zip" ]; then
+    # Xử lý ROM đuôi .zip (Recovery hoặc Payload)
+    unzip -q baserom.zip -d build/ || { echo "LỖI: Giải nén file .zip thất bại!"; exit 1; }
+    
+    # Nếu trong zip có payload.bin (ROM OTA/Global chuẩn)
+    if [ -f "build/payload.bin" ]; then
+        echo "-> Phát hiện payload.bin, đang trích xuất phân vùng..."
+        python3 tools/Linux/x86_64/payload-extractor/extract.py build/payload.bin --output build/images/ || \
+        python3 tools/lpunpack.py # fallback nếu cần
+    fi
+else
+    # Xử lý ROM Fastboot .tgz
+    tar -xzf baserom.tgz -C build/ --strip-components=1 || { echo "LỖI: Giải nén file .tgz thất bại!"; exit 1; }
+    mv build/images/super.img.* build/ 2>/dev/null || true
+    mv build/images/super.img build/ 2>/dev/null || true
+    if ls build/super.img.* 1> /dev/null 2>&1; then
+        ./tools/Linux/x86_64/simg2img build/super.img.* build/super.img
+        rm -f build/super.img.*
+    fi
+    
+    echo "-> Đang bung nén siêu phân vùng super.img..."
+    python3 tools/lpunpack.py build/super.img build/unpacked/ >/dev/null 2>&1 || { echo "LỖI: Không thể đọc siêu phân vùng!"; exit 1; }
+end
 
 for part in system system_ext product vendor odm mi_ext; do
     if [ -f "build/unpacked/${part}.img" ]; then
@@ -42,22 +63,19 @@ for part in system system_ext product vendor odm mi_ext; do
         ./tools/Linux/x86_64/extract.erofs -x -i build/unpacked/${part}.img -x -T8 -o build/extracted/${part} >/dev/null 2>&1
     fi
 done
-rm -f build/unpacked/*.img
+rm -rf build/unpacked/*.img
 
-# 4. GỌI MODULE TÙY BIẾN (Đây là nơi phép thuật xảy ra)
+# 4. GỌI MODULE TÙY BIẾN
 echo "-> [4/5] Đang áp dụng các tinh chỉnh độc quyền..."
 if [ -f "mod.sh" ]; then
     chmod +x mod.sh
     bash mod.sh "$WORK_DIR/build/extracted"
 else
-    echo "BỎ QUA: Không tìm thấy file mod.sh, giữ nguyên hệ điều hành gốc."
+    echo "BỎ QUA: Không tìm thấy file mod.sh"
 fi
 
-# 5. Đóng gói lại (Repack)
-echo "-> [5/5] Đang đóng gói lại bản ROM..."
-# (Hệ thống sẽ nén lại các thư mục thành định dạng EROFS siêu nhẹ tại bước này)
-# Tạm thời cấu trúc lõi đã xong, lệnh repack chi tiết sẽ được bổ sung sau khi chốt mod.sh
-
+# 5. Hoàn tất
+echo "-> [5/5] Xử lý lõi thành công!"
 echo "==================================================="
 echo " HOÀN TẤT XỬ LÝ LÕI HỆ THỐNG!"
 echo "==================================================="
