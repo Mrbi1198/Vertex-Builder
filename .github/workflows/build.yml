@@ -26,7 +26,7 @@ jobs:
       - name: ⚙️ Cài đặt công cụ nền tảng
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y zstd bc xmlstarlet aapt zip unzip aria2 curl wget
+          sudo apt-get install -y zstd bc xmlstarlet aapt zip unzip aria2 curl wget rclone
           echo "Môi trường Vertex đã sẵn sàng!"
 
       - name: 🚀 Khởi chạy hệ thống lõi
@@ -34,3 +34,14 @@ jobs:
           ROM_URL: ${{ inputs.rom_url }}
         run: |
           sudo -E bash core.sh "$ROM_URL"
+
+      - name: ☁️ Đẩy ROM lên Google Drive
+        env:
+          RCLONE_CONFIG_GDRIVE_TYPE: drive
+          RCLONE_CONFIG_GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          RCLONE_CONFIG_GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          RCLONE_CONFIG_GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        run: |
+          echo "-> Đang tải file ROM lên Google Drive..."
+          rclone copy VertexOS_Custom_ROM.zip gdrive:VertexOS_Backup --progress
+          echo "-> Hoàn tất đẩy file lên Google Drive thành công!"
