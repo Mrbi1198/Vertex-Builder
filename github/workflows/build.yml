@@ -26,7 +26,7 @@ jobs:
       - name: ⚙️ Cài đặt công cụ nền tảng
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y zstd bc xmlstarlet aapt zip unzip aria2 
+          sudo apt-get install -y zstd bc xmlstarlet aapt zip unzip aria2 curl wget
           echo "Môi trường Vertex đã sẵn sàng!"
 
       - name: 🚀 Khởi chạy hệ thống lõi
