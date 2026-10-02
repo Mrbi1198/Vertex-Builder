@@ -16,7 +16,7 @@ mv temp_tools/bin ./tools
 rm -rf temp_tools
 chmod -R 777 tools/
 
-# 2. Tải bản ROM gốc (Lưu tự động theo định dạng thực tế)
+# 2. Tải bản ROM gốc
 echo "-> [2/5] Đang tải ROM từ máy chủ..."
 aria2c -x16 -s16 -j16 -k1M "$ROM_URL" -o baserom_downloaded || { echo "LỖI CHÍ MẠNG: Tải ROM thất bại!"; exit 1; }
 
@@ -34,17 +34,12 @@ echo "-> [3/5] Đang giải nén lớp vỏ ROM (Định dạng: $ROM_TYPE)..."
 mkdir -p build/images build/unpacked build/extracted
 
 if [ "$ROM_TYPE" == "zip" ]; then
-    # Xử lý ROM đuôi .zip (Recovery hoặc Payload)
     unzip -q baserom.zip -d build/ || { echo "LỖI: Giải nén file .zip thất bại!"; exit 1; }
-    
-    # Nếu trong zip có payload.bin (ROM OTA/Global chuẩn)
     if [ -f "build/payload.bin" ]; then
         echo "-> Phát hiện payload.bin, đang trích xuất phân vùng..."
-        python3 tools/Linux/x86_64/payload-extractor/extract.py build/payload.bin --output build/images/ || \
-        python3 tools/lpunpack.py # fallback nếu cần
+        python3 tools/Linux/x86_64/payload-extractor/extract.py build/payload.bin --output build/images/
     fi
 else
-    # Xử lý ROM Fastboot .tgz
     tar -xzf baserom.tgz -C build/ --strip-components=1 || { echo "LỖI: Giải nén file .tgz thất bại!"; exit 1; }
     mv build/images/super.img.* build/ 2>/dev/null || true
     mv build/images/super.img build/ 2>/dev/null || true
@@ -55,7 +50,7 @@ else
     
     echo "-> Đang bung nén siêu phân vùng super.img..."
     python3 tools/lpunpack.py build/super.img build/unpacked/ >/dev/null 2>&1 || { echo "LỖI: Không thể đọc siêu phân vùng!"; exit 1; }
-end
+fi
 
 for part in system system_ext product vendor odm mi_ext; do
     if [ -f "build/unpacked/${part}.img" ]; then
