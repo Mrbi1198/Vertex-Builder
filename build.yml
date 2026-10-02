@@ -1,0 +1,36 @@
+name: Vertex ROM Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      rom_url:
+        description: 'Link ROM gốc (ZIP/TGZ)'
+        required: true
+      
+jobs:
+  Build-Vertex:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🧹 Dọn dẹp máy chủ
+        uses: easimon/maximize-build-space@master
+        with:
+          swap-size-mb: 1024
+          root-reserve-mb: 512
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+
+      - name: 📥 Tải mã nguồn của bạn
+        uses: actions/checkout@main
+
+      - name: ⚙️ Cài đặt công cụ nền tảng
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y zstd bc xmlstarlet aapt zip unzip aria2 
+          echo "Môi trường Vertex đã sẵn sàng!"
+
+      - name: 🚀 Khởi chạy hệ thống lõi
+        env:
+          ROM_URL: ${{ inputs.rom_url }}
+        run: |
+          sudo -E bash core.sh "$ROM_URL"
