@@ -32,7 +32,6 @@ if [ -f "build/payload.bin" ]; then
 elif [ -f "build/images/super.img" ]; then
     echo "-> Đã có sẵn file super.img"
 else
-    # Tìm xem file super.img nằm ở đâu sau khi unzip
     found_super=$(find build/ -name "super.img" | head -n 1)
     if [ -n "$found_super" ]; then
         cp "$found_super" build/super.img
@@ -61,8 +60,19 @@ else
     echo "BỎ QUA: Không tìm thấy file mod.sh"
 fi
 
-# 5. Hoàn tất
-echo "-> [5/5] Xử lý lõi thành công!"
+# 5. Đóng gói lại thành file ROM hoàn chỉnh (Repack)
+echo "-> [5/5] Đang đóng gói lại thành file ROM thành phẩm..."
+mkdir -p output_rom
+
+for part in system system_ext product vendor odm mi_ext; do
+    if [ -d "build/extracted/${part}" ]; then
+        echo "   [+] Đang nén lại phân vùng: ${part}..."
+        ./tools/Linux/x86_64/mkfs.erofs "output_rom/${part}.img" "build/extracted/${part}" >/dev/null 2>&1 || true
+    fi
+done
+
+cd output_rom && zip -r9 ../VertexOS_Custom_ROM.zip ./* && cd ..
+
 echo "==================================================="
-echo " HOÀN TẤT XỬ LÝ LÕI HỆ THỐNG!"
+echo " HOÀN TẤT XỬ LÝ VÀ ĐÓNG GÓI HỆ THỐNG!"
 echo "==================================================="
