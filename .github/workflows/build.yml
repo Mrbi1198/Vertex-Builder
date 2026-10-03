@@ -1,0 +1,77 @@
+name: Vertex Auto-Build ROM
+
+on:
+  workflow_dispatch:
+    inputs:
+      rom_url:
+        description: 'Direct link tải ROM gốc (Recovery/Fastboot zip)'
+        required: true
+        default: ''
+      device_codename:
+        description: 'Tên mã thiết bị'
+        required: true
+        default: 'corot'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 2. Giải phóng dung lượng đĩa
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 2048
+          temp-reserve-mb: 2048
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+
+      - name: 3. Thiết lập môi trường và công cụ
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git wget curl python3 python3-pip erofs-utils android-sdk-libsparse-utils zip unzip rclone
+          pip3 install protobuf
+          
+          # Cài payload-dumper-go
+          curl -s https://api.github.com/repos/ssut/payload-dumper-go/releases/latest \
+          | grep "browser_download_url.*linux_amd64.tar.gz" \
+          | cut -d : -f 2,3 | tr -d \" | wget -qi -
+          tar -xvf payload-dumper-go_*_linux_amd64.tar.gz
+          sudo mv payload-dumper-go /usr/local/bin/
+          rm -f payload-dumper-go_*
+
+      - name: 4. Tải và bung ROM
+        run: |
+          mkdir -p workspace/extracted
+          cd workspace
+          echo "Bắt đầu tải ROM..."
+          wget -q --show-progress "${{ github.event.inputs.rom_url }}" -O base_rom.zip
+          
+          echo "Trích xuất payload.bin..."
+          unzip -q base_rom.zip payload.bin -d . || true
+          
+          echo "Bung các phân vùng hệ thống..."
+          payload-dumper-go -o extracted payload.bin
+          rm -f base_rom.zip payload.bin
+
+      - name: 5. Chạy Script Tinh Chỉnh & Debloat
+        run: |
+          chmod +x scripts/modify.sh
+          ./scripts/modify.sh workspace/extracted
+
+      - name: 6. Đóng gói ROM
+        run: |
+          chmod +x scripts/pack.sh
+          ./scripts/pack.sh workspace/extracted ${{ github.event.inputs.device_codename }}
+
+      - name: 7. Đẩy ROM lên Google Drive qua Rclone
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "${{ secrets.RCLONE_CONFIG }}" > ~/.config/rclone/rclone.conf
+          
+          echo "Đang upload lên Google Drive..."
+          rclone copy workspace/output/*.zip gdrive:ROM_Custom_Builds -P
+          rclone link gdrive:ROM_Custom_Builds || true
