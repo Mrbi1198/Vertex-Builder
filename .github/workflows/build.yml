@@ -2,15 +2,6 @@ name: Vertex Auto-Build ROM
 
 on:
   workflow_dispatch:
-    inputs:
-      rom_url:
-        description: 'Direct link tải ROM gốc (Recovery/Fastboot zip)'
-        required: true
-        default: ''
-      device_codename:
-        description: 'Tên mã thiết bị'
-        required: true
-        default: 'corot'
 
 jobs:
   build:
@@ -21,57 +12,52 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 2. Giải phóng dung lượng đĩa
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 2048
-          temp-reserve-mb: 2048
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h
 
       - name: 3. Thiết lập môi trường và công cụ
         run: |
-          sudo apt-get update
-          sudo apt-get install -y git wget curl python3 python3-pip erofs-utils android-sdk-libsparse-utils zip unzip rclone
-          pip3 install protobuf
-          
-          # Cài payload-dumper-go
-          curl -s https://api.github.com/repos/ssut/payload-dumper-go/releases/latest \
-          | grep "browser_download_url.*linux_amd64.tar.gz" \
-          | cut -d : -f 2,3 | tr -d \" | wget -qi -
-          tar -xvf payload-dumper-go_*_linux_amd64.tar.gz
-          sudo mv payload-dumper-go /usr/local/bin/
-          rm -f payload-dumper-go_*
+          sudo apt update
+          sudo apt install -y curl wget git zip unzip python3 python3-pip rclone
+          pip3 install --upgrade pip
 
       - name: 4. Tải và bung ROM
         run: |
-          mkdir -p workspace/extracted
-          cd workspace
-          echo "Bắt đầu tải ROM..."
-          wget -q --show-progress "${{ github.event.inputs.rom_url }}" -O base_rom.zip
-          
-          echo "Trích xuất payload.bin..."
-          unzip -q base_rom.zip payload.bin -d . || true
-          
-          echo "Bung các phân vùng hệ thống..."
-          payload-dumper-go -o extracted payload.bin
-          rm -f base_rom.zip payload.bin
+          chmod +x scripts/*.sh || true
+          if [ -f "scripts/download.sh" ]; then
+            bash scripts/download.sh
+          fi
 
       - name: 5. Chạy Script Tinh Chỉnh & Debloat
         run: |
-          chmod +x scripts/modify.sh
-          ./scripts/modify.sh workspace/extracted
+          if [ -f "scripts/modify.sh" ]; then
+            bash scripts/modify.sh
+          fi
 
       - name: 6. Đóng gói ROM
         run: |
-          chmod +x scripts/pack.sh
-          ./scripts/pack.sh workspace/extracted ${{ github.event.inputs.device_codename }}
+          if [ -f "scripts/pack.sh" ]; then
+            bash scripts/pack.sh
+          fi
 
       - name: 7. Đẩy ROM lên Google Drive qua Rclone
+        env:
+          RCLONE_CONFIG_DATA: ${{ secrets.RCLONE_CONFIG }}
         run: |
           mkdir -p ~/.config/rclone
-          echo "${{ secrets.RCLONE_CONFIG }}" > ~/.config/rclone/rclone.conf
+          echo "$RCLONE_CONFIG_DATA" > ~/.config/rclone/rclone.conf
+          # Tìm file zip thành phẩm và đẩy lên Google Drive
+          TARGET_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+          if [ -n "$TARGET_FILE" ]; then
+            echo "Đang upload $TARGET_FILE lên Google Drive..."
+            rclone copy "$TARGET_FILE" gdrive:/ROM_Builds/ -P
+          else
+            echo "Không tìm thấy file zip thành phẩm để upload!"
+            exit 1
+          fi
           
-          echo "Đang upload lên Google Drive..."
-          rclone copy workspace/output/*.zip gdrive:ROM_Custom_Builds -P
-          rclone link gdrive:ROM_Custom_Builds || true
