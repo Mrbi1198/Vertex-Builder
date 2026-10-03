@@ -2,6 +2,11 @@ name: Vertex Auto-Build ROM
 
 on:
   workflow_dispatch:
+    inputs:
+      rom_url:
+        description: 'Dán đường link tải ROM vào đây'
+        required: true
+        default: ''
 
 jobs:
   build:
@@ -23,14 +28,19 @@ jobs:
       - name: 3. Thiết lập môi trường và công cụ
         run: |
           sudo apt update
-          sudo apt install -y curl wget git zip unzip python3 python3-pip rclone
+          sudo apt install -y curl wget git zip unzip python3 python3-pip rclone aria2
           pip3 install --upgrade pip
 
       - name: 4. Tải và bung ROM
+        env:
+          ROM_URL: ${{ github.event.inputs.rom_url }}
         run: |
           chmod +x scripts/*.sh || true
+          echo "Bắt đầu tải ROM từ link: $ROM_URL"
           if [ -f "scripts/download.sh" ]; then
-            bash scripts/download.sh
+            bash scripts/download.sh "$ROM_URL"
+          else
+            aria2c -x 16 -s 16 -k 1M "$ROM_URL" -o rom.zip
           fi
 
       - name: 5. Chạy Script Tinh Chỉnh & Debloat
@@ -51,8 +61,10 @@ jobs:
         run: |
           mkdir -p ~/.config/rclone
           echo "$RCLONE_CONFIG_DATA" > ~/.config/rclone/rclone.conf
-          # Tìm file zip thành phẩm và đẩy lên Google Drive
-          TARGET_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+          TARGET_FILE=$(find . -maxdepth 2 -name "*.zip" ! -name "rom.zip" | head -n 1)
+          if [ -z "$TARGET_FILE" ]; then
+            TARGET_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+          fi
           if [ -n "$TARGET_FILE" ]; then
             echo "Đang upload $TARGET_FILE lên Google Drive..."
             rclone copy "$TARGET_FILE" gdrive:/ROM_Builds/ -P
@@ -60,4 +72,3 @@ jobs:
             echo "Không tìm thấy file zip thành phẩm để upload!"
             exit 1
           fi
-          
