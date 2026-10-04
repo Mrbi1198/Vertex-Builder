@@ -36,11 +36,20 @@ jobs:
           ROM_URL: ${{ github.event.inputs.rom_url }}
         run: |
           chmod +x scripts/*.sh || true
-          echo "Bắt đầu tải ROM từ link: $ROM_URL"
+          
+          # Tự động trích xuất tên file gốc từ đường link URL
+          ORIGINAL_NAME=$(basename "${ROM_URL%%\?*}")
+          if [ -z "$ORIGINAL_NAME" ] || [[ "$ORIGINAL_NAME" != *.zip ]]; then
+            ORIGINAL_NAME="ROM_$(date +%Y%m%d_%H%M%S).zip"
+          fi
+          echo "ROM_FILENAME=$ORIGINAL_NAME" >> $GITHUB_ENV
+          echo "Tên file ROM gốc: $ORIGINAL_NAME"
+
           if [ -f "scripts/download.sh" ]; then
-            bash scripts/download.sh "$ROM_URL"
+            bash scripts/download.sh "$ROM_URL" "$ORIGINAL_NAME"
           else
-            aria2c -x 16 -s 16 -k 1M "$ROM_URL" -o rom.zip
+            echo "Đang tải ROM với tên gốc..."
+            aria2c -x 16 -s 16 -k 1M "$ROM_URL" -o "$ORIGINAL_NAME"
           fi
 
       - name: 5. Chạy Script Tinh Chỉnh & Debloat
@@ -61,14 +70,25 @@ jobs:
         run: |
           mkdir -p ~/.config/rclone
           echo "$RCLONE_CONFIG_DATA" > ~/.config/rclone/rclone.conf
-          TARGET_FILE=$(find . -maxdepth 2 -name "*.zip" ! -name "rom.zip" | head -n 1)
+
+          # Tìm file zip thành phẩm mới nhất tạo ra (loại trừ file tải ban đầu nếu có)
+          TARGET_FILE=$(find . -maxdepth 2 -name "*.zip" ! -name "$ROM_FILENAME" | head -n 1)
+
+          # Nếu không tạo ra file mới (ghi đè vào file gốc), lấy luôn file gốc
           if [ -z "$TARGET_FILE" ]; then
-            TARGET_FILE=$(find . -maxdepth 2 -name "*.zip" | head -n 1)
+            TARGET_FILE="$ROM_FILENAME"
           fi
-          if [ -n "$TARGET_FILE" ]; then
-            echo "Đang upload $TARGET_FILE lên Google Drive..."
-            rclone copy "$TARGET_FILE" gdrive:/ROM_Builds/ -P
+
+          if [ -f "$TARGET_FILE" ]; then
+            # Đổi tên file xuất ra có tiền tố Vertex_ và giữ nguyên tên ROM gốc
+            FINAL_NAME="Vertex_${ROM_FILENAME}"
+            if [ "$TARGET_FILE" != "$FINAL_NAME" ]; then
+              mv "$TARGET_FILE" "$FINAL_NAME"
+            fi
+            
+            echo "Đang upload $FINAL_NAME lên Google Drive..."
+            rclone copy "$FINAL_NAME" gdrive:/ROM_Builds/ -P
           else
-            echo "Không tìm thấy file zip thành phẩm để upload!"
+            echo "Lỗi: Không tìm thấy file ZIP thành phẩm!"
             exit 1
           fi
